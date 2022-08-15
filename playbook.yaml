@@ -1,0 +1,135 @@
+- name: Install common packages
+  hosts: all
+  become: true
+  tasks:
+    - name: Install tcpdump
+      package:
+        name: tcpdump
+        state: installed
+
+- name: Configure router
+  hosts: node2
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Enable ip forwarding
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        state: present
+        sysctl_file: /etc/sysctl.d/ip_forward.conf
+        reload: true
+
+    - name: Install iptables commands
+      package:
+        name: iptables-nft
+        state: installed
+
+    - name: Enable ip masquerade
+      command: >-
+        iptables -t nat -A POSTROUTING -s {{ host_net }} -j MASQUERADE
+
+- name: Configure networking
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check if connection exists
+      command: >-
+        nmcli c show dockernet-eth1
+      register: conn
+      failed_when: false
+      changed_when: conn.rc != 0
+
+    - name: Assign address
+      when: conn is changed
+      command: >-
+        nmcli c add
+          type ethernet
+          conn.id dockernet-eth1
+          ifname eth1
+          ipv4.method manual
+          ipv4.address "{{ addresses[inventory_hostname] }}"
+          {% if inventory_hostname == "node2" %}
+          ipv4.routes "{{ container_net }} {{ addresses.node1 }}"
+          {% endif %}
+
+    - name: Ensure connection is up
+      command: >-
+        nmcli c up dockernet-eth1
+      changed_when: false
+
+    - name: Add default route via node2
+      when: inventory_hostname != "node2"
+      command: >-
+        ip route replace default via {{ addresses.node2.split('/')[0] }}
+
+- name: Configure docker
+  hosts: node1
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Ensure dnf core plugins are installed
+      package:
+        name: dnf-plugins-core
+        state: installed
+
+    - name: Install docker repository
+      command: >-
+        dnf config-manager
+          --add-repo
+          https://download.docker.com/linux/fedora/docker-ce.repo
+      args:
+        creates: /etc/yum.repos.d/docker-ce.repo
+
+    - name: Install docker
+      package:
+        name: "{{ packages }}"
+        state: installed
+      vars:
+        packages:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+
+    - name: Enable docker service
+      service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Check if ext network exists
+      command: >-
+        docker network inspect ext
+      register: net
+      failed_when: false
+      changed_when: net.rc != 0
+
+    - name: Create ext network
+      when: net is changed
+      command: >-
+        docker network create --subnet={{ container_net }}
+          --opt "com.docker.network.bridge.name"="br-ext" ext
+
+    - name: Check if nginx container exists
+      command: >-
+        docker container inspect web
+      register: container_check
+      failed_when: false
+      changed_when: container_check.rc != 0
+
+    - name: Create nginx container
+      when: container_check is changed
+      command: >-
+        docker run -d --network=ext --name=web docker.io/nginx:latest
+
+    - name: Get nginx container data
+      command: >-
+        docker container inspect web
+      register: container
+      changed_when: false
+
+    - name: Allow forwarding from host to to container net
+      command: >-
+        iptables -C FORWARD -s {{ host_net }} -d {{ container_net }} -j ACCEPT
