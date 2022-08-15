@@ -131,5 +131,8 @@
       changed_when: false
 
     - name: Allow forwarding from host to to container net
-      command: >-
-        iptables -C FORWARD -s {{ host_net }} -d {{ container_net }} -j ACCEPT
+      iptables:
+        chain: FORWARD
+        source: "{{ host_net }}"
+        destination: "{{ container_net }}"
+        jump: ACCEPT
