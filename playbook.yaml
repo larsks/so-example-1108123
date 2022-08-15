@@ -25,7 +25,15 @@
         name: iptables-nft
         state: installed
 
+    - name: Check for existing masquerade rule
+      command: >-
+        iptables -t nat -C POSTROUTING -s {{ host_net }} ! -d {{ container_net }} -j MASQUERADE
+      register: ipt
+      failed_when: false
+      changed_when: ipt.rc != 0
+
     - name: Enable ip masquerade
+      when: ipt is changed
       command: >-
         iptables -t nat -A POSTROUTING -s {{ host_net }} ! -d {{ container_net }} -j MASQUERADE
 
@@ -133,12 +141,11 @@
       command: >-
         docker run -d --network=ext --name=web docker.io/nginx:latest
 
-    - name: Get nginx container data
-      command: >-
-        docker container inspect web
-      register: container
-      changed_when: false
-
+- name: Update node1 routes
+  hosts: node1
+  gather_facts: false
+  become: true
+  tasks:
     - name: Allow forwarding from host to to container net
       iptables:
         chain: FORWARD
