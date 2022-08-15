@@ -74,12 +74,11 @@
   tasks:
     - name: Delete existing default routes
       command: >-
-        ip route delete default
-      failed_when: false
+        ip route flush default
 
     - name: Add default route via node2
       command: >-
-        ip route replace default via {{ addresses.node2.split('/')[0] }}
+        ip route add default via {{ addresses.node2.split('/')[0] }}
 
 - name: Configure docker
   hosts: node1
