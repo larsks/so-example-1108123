@@ -27,7 +27,7 @@
 
     - name: Enable ip masquerade
       command: >-
-        iptables -t nat -A POSTROUTING -s {{ host_net }} -j MASQUERADE
+        iptables -t nat -A POSTROUTING -s {{ host_net }} ! -d {{ container_net }} -j MASQUERADE
 
 - name: Configure networking
   hosts: all
