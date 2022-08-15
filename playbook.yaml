@@ -51,7 +51,7 @@
           ipv4.method manual
           ipv4.address "{{ addresses[inventory_hostname] }}"
           {% if inventory_hostname == "node2" %}
-          ipv4.routes "{{ container_net }} {{ addresses.node1 }}"
+          ipv4.routes "{{ container_net }} {{ (addresses.node1|ansible.utils.ipaddr('address'))[0] }}"
           {% endif %}
 
     - name: Ensure connection is up
