@@ -59,8 +59,17 @@
         nmcli c up dockernet-eth1
       changed_when: false
 
+- name: Configure default routes
+  hosts: all:!node2
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Delete existing default routes
+      command: >-
+        ip route delete default
+      failed_when: false
+
     - name: Add default route via node2
-      when: inventory_hostname != "node2"
       command: >-
         ip route replace default via {{ addresses.node2.split('/')[0] }}
 
